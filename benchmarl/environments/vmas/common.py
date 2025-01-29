@@ -17,6 +17,7 @@ from benchmarl.utils import DEVICE_TYPING
 class VmasTask(Task):
     """Enum for VMAS tasks."""
 
+    VORONOI = None
     BALANCE = None
     SAMPLING = None
     NAVIGATION = None
