@@ -307,7 +307,7 @@ class Scenario(BaseScenario):
                                                                                  self.world.agents.index(a), j)
             self.sampling_rew = reward.sum(-1)
 
-        return self.sampling_rew if self.shared_rew else voro.computeCoverageFunction(self.world.agents.index(agent))
+        return self.sampling_rew if self.shared_rew else self.voronoi.computeCoverageFunction(self.world.agents.index(agent))
 
     def get_coverage_actions(self, agent: Agent) -> Tensor:
         robots = [a.state.pos for a in self.world.agents]
