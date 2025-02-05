@@ -387,6 +387,7 @@ class Scenario(BaseScenario):
     def extra_render(self, env_index: int = 0):
         from vmas.simulator import rendering
         from vmas.simulator.rendering import render_function_util
+        from scipy.spatial.qhull import QhullError
 
         # Function
         geoms = [
@@ -398,8 +399,13 @@ class Scenario(BaseScenario):
         ]
 
         # Compute Voronoi regions
-        vor = self._compute_voronoi_regions(env_index)
-        geoms = self._plot_voronoi_regions(vor, geoms)
+        try:
+            vor = self._compute_voronoi_regions(env_index)
+            geoms = self._plot_voronoi_regions(vor, geoms)
+        except QhullError as e:
+            print(f"QhullError: {e}")  # Log the error message for debugging
+        except Exception as e:
+            print(f"Unexpected error in Voronoi computation: {e}")  # Catch any other errors
 
         # Communication lines
         for i, agent1 in enumerate(self.world.agents):
@@ -425,8 +431,8 @@ class Scenario(BaseScenario):
         for i in range(4):
             geom = Line(
                 length=2
-                * ((self.ydim if i % 2 == 0 else self.xdim) - self.agent_radius)
-                + self.agent_radius * 2
+                       * ((self.ydim if i % 2 == 0 else self.xdim) - self.agent_radius)
+                       + self.agent_radius * 2
             ).get_geometry()
             xform = rendering.Transform()
             geom.add_attr(xform)
