@@ -38,7 +38,7 @@ class Scenario(BaseScenario):
         self.grid_spacing = kwargs.pop("grid_spacing", 0.05)
 
         self.n_gaussians = kwargs.pop("n_gaussians", 5)
-        self.cov = kwargs.pop("cov", 0.01)
+        self.cov = kwargs.pop("cov", 0.1)
         self.collisions = kwargs.pop("collisions", True)
         self.spawn_same_pos = kwargs.pop("spawn_same_pos", False)
         self.norm = kwargs.pop("norm", True)
@@ -608,7 +608,11 @@ class VoronoiPolicy(BaseHeuristicPolicy):
         for i in range(pos.shape[0]):
             voro = self.voronoi.partitioning_single_env(points[i])
             centroid = self.voronoi.computeCentroidSingleEnv(voro, pdf[i])
-            actions[i, :] = self.Kp * (centroid - pos[i, :])
+
+            res_action = self.Kp * (centroid - pos[i, :])
+            if torch.isnan(res_action).any().item():
+                print("action=nan: ", res_action)
+            actions[i, :] = torch.zeros_like(res_action, device=res_action.device, dtype=res_action.dtype) if torch.isnan(res_action).any().item() else res_action
 
         return actions
 
@@ -790,7 +794,7 @@ class VoronoiCoverage:
         )
         return -reward
 
-    def computeCentroid(self, agent_id):
+    """def computeCentroid(self, agent_id):
         centroids = torch.zeros((self.worlds_num, 2), device=self.device)
         for i in range(self.worlds_num):
             vor = self.voronois[i]
@@ -804,7 +808,7 @@ class VoronoiCoverage:
             Cy = torch.sum(weights * self.xy_grid[:, 1][bool_val]) * dA
             centroids[i, :] = torch.tensor([Cx / A, Cy / A])
 
-        return centroids
+        return centroids"""
 
     def computeCentroidSingleEnv(self, vor, pdf):
         region = vor.point_region[0]
@@ -829,8 +833,20 @@ class VoronoiCoverage:
         weights = pdf[bool_val]
         dA = self.grid_spacing**2
         A = torch.sum(weights) * dA
-        Cx = torch.sum(weights * xy_grid[:, 0][bool_val]) * dA
-        Cy = torch.sum(weights * xy_grid[:, 1][bool_val]) * dA
+
+        Cx = torch.sum(weights*xy_grid[:, 0][bool_val]) * dA
+        Cy = torch.sum(weights*xy_grid[:, 1][bool_val]) * dA
+
+        if A.item() == 0:
+            # uniform distribution
+            A = weights.shape[0] * dA
+            Cx = 0 # torch.sum(xy_grid[:, 0][bool_val]) * dA
+            Cy = 0 # torch.sum(xy_grid[:, 1][bool_val]) * dA
+
         centroid = torch.tensor([Cx / A, Cy / A]).to(self.device)
+
+        if torch.isnan(centroid).any().item():
+            # perchè i centroidi sono [nan, nan]
+            print(centroid)
 
         return centroid
