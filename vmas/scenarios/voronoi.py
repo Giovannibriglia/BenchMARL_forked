@@ -49,7 +49,7 @@ class Scenario(BaseScenario):
         self.cells_range = kwargs.pop(
             "cells_range", 3
         )  # number of cells sensed on each side
-        self.centralized = kwargs.pop("centralized", False)
+        self.centralized = kwargs.pop("centralized", True)
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
         assert not (self.spawn_same_pos and self.collisions)
