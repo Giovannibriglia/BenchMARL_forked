@@ -49,7 +49,7 @@ class Scenario(BaseScenario):
         self.cells_range = kwargs.pop(
             "cells_range", 3
         )  # number of cells sensed on each side
-        self.centralized = kwargs.pop("centralized", True)
+        self.centralized = kwargs.pop("centralized", False)
         ScenarioUtils.check_kwargs_consumed(kwargs)
 
         assert not (self.spawn_same_pos and self.collisions)
@@ -453,6 +453,7 @@ class Scenario(BaseScenario):
                 f=self.density_for_plot(env_index=env_index),
                 plot_range=(self.xdim, self.ydim),
                 cmap_alpha=self.alpha_plot,
+                cmap_name="plasma",
             )
         ]
 
@@ -664,11 +665,31 @@ class VoronoiPolicy(BaseHeuristicPolicy):
 
             indices_robots_too_far = torch.where(lidar_values == self.lidar_range)
 
-            for id, index_1 in enumerate(indices_robots_too_far[1]):
+            """for id, index_1 in enumerate(indices_robots_too_far[1]):
                 index_0 = int(indices_robots_too_far[0][id])
+                random_far_value = (
+                    100 + id * 10
+                )  # Ensures different values, starting from 100
                 robots_rel[index_0, index_1, :] = torch.tensor(
-                    [100, 100], device=self.device
-                )
+                    [random_far_value, random_far_value], device=self.device
+                )"""
+            ids = torch.arange(
+                len(indices_robots_too_far[1]), device=self.device, dtype=torch.float32
+            )  # Ensure float type
+            random_far_values = (100 + ids * 10).to(
+                robots_rel.dtype
+            )  # Ensure dtype matches `robots_rel`
+
+            index_0 = indices_robots_too_far[0].long()  # Ensure indices are long type
+            index_1 = indices_robots_too_far[1].long()
+
+            # Create a tensor of shape [num_ids, 2] with [n_robots_too_far, n_robots_too_far] values
+            random_far_values = random_far_values.unsqueeze(1).repeat(
+                1, 2
+            )  # Expand to [n_robots_too_far, n_robots_too_far] format
+
+            # Assign in one operation
+            robots_rel[index_0, index_1, :] = random_far_values
 
             points = pos.unsqueeze(1).expand(-1, self.n_rays, -1)  # [n_envs, n_rays, 2]
             robots = points + robots_rel
@@ -779,58 +800,48 @@ class VoronoiCoverage:
         return mirrored_points.tolist()"""
 
     def mirror(self, points, x_min, x_max, y_min, y_max):
-        mirrored_points = []
+        points_np = (
+            points.cpu().detach().numpy()
+        )  # Convert PyTorch tensor to NumPy array
 
-        points_np = points.cpu().detach().numpy()
+        # Define the square corners and edges
+        square_corners = np.array(
+            [[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]]
+        )
 
-        # Define the corners of the square
-        square_corners = [
-            (x_min, y_min),
-            (x_max, y_min),
-            (x_max, y_max),
-            (x_min, y_max),
-        ]
+        edges_start = square_corners
+        edges_end = np.roll(
+            square_corners, shift=-1, axis=0
+        )  # Circular shift to form edges
 
-        # Mirror points across each edge of the square
-        for edge_start, edge_end in zip(
-            square_corners, square_corners[1:] + [square_corners[0]]
-        ):
-            edge_vector = (edge_end[0] - edge_start[0], edge_end[1] - edge_start[1])
+        # Compute edge vectors
+        edge_vectors = edges_end - edges_start  # Shape: (4, 2)
 
-            for point in points_np:
-                # Calculate the vector from the edge start to the point
-                point_vector = (point[0] - edge_start[0], point[1] - edge_start[1])
+        # Compute vectors from edge start points to given points (broadcasting)
+        point_vectors = (
+            points_np[:, None, :] - edges_start[None, :, :]
+        )  # Shape: (n_points, 4, 2)
 
-                # Calculate the mirrored point by reflecting across the edge
-                mirrored_vector = (
-                    point_vector[0]
-                    - 2
-                    * (
-                        point_vector[0] * edge_vector[0]
-                        + point_vector[1] * edge_vector[1]
-                    )
-                    / (edge_vector[0] ** 2 + edge_vector[1] ** 2)
-                    * edge_vector[0],
-                    point_vector[1]
-                    - 2
-                    * (
-                        point_vector[0] * edge_vector[0]
-                        + point_vector[1] * edge_vector[1]
-                    )
-                    / (edge_vector[0] ** 2 + edge_vector[1] ** 2)
-                    * edge_vector[1],
-                )
+        # Compute dot products between point_vectors and edge_vectors
+        dot_products = np.sum(
+            point_vectors * edge_vectors, axis=-1
+        )  # Shape: (n_points, 4)
+        edge_lengths_sq = np.sum(edge_vectors**2, axis=-1)  # Shape: (4,)
 
-                # Translate the mirrored vector back to the absolute coordinates
-                mirrored_point = (
-                    edge_start[0] + mirrored_vector[0],
-                    edge_start[1] + mirrored_vector[1],
-                )
+        # Compute reflection coefficients
+        coeffs = 2 * (dot_products / edge_lengths_sq)  # Shape: (n_points, 4)
 
-                # Add the mirrored point to the result list
-                mirrored_points.append(mirrored_point)
+        # Compute mirrored vectors
+        mirrored_vectors = (
+            point_vectors - coeffs[:, :, None] * edge_vectors
+        )  # Shape: (n_points, 4, 2)
 
-        return mirrored_points
+        # Compute final mirrored points
+        mirrored_points = (
+            edges_start[None, :, :] + mirrored_vectors
+        )  # Shape: (n_points, 4, 2)
+
+        return mirrored_points.reshape(-1, 2)  # Flatten to return a list of points
 
     def partitioning(self, agents: torch.Tensor):
         self.worlds_num = agents.shape[0]
