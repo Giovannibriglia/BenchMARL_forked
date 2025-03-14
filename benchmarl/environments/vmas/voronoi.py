@@ -17,3 +17,5 @@ class TaskConfig:
     cov: float = MISSING
     collisions: bool = MISSING
     spawn_same_pos: bool = MISSING
+    grid_spacing: float = MISSING
+    centralized: bool = MISSING
